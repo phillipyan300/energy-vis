@@ -1,0 +1,67 @@
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+:root {
+  --panel-bg: rgba(17, 24, 39, 0.92);
+  --panel-border: rgba(75, 85, 99, 0.4);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0a0a0a;
+  color: #f3f4f6;
+  font-family: var(--font-geist-sans, system-ui, -apple-system, sans-serif);
+}
+
+.panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.75rem;
+}
+
+/* Timeline slider */
+.timeline-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(75, 85, 99, 0.6);
+  outline: none;
+  cursor: pointer;
+}
+
+.timeline-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #60a5fa;
+  border: 2px solid #fff;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.5);
+}
+
+.timeline-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #60a5fa;
+  border: 2px solid #fff;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.5);
+}
+
+.timeline-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+}
+
+.timeline-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(75, 85, 99, 0.6);
+}
