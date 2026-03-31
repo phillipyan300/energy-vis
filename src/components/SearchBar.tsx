@@ -88,9 +88,9 @@ export default function SearchBar({ items, onSelect }: SearchBarProps) {
   return (
     <div
       ref={containerRef}
-      className="absolute top-20 left-1/2 -translate-x-1/2 z-20"
+      className="absolute top-4 right-4 z-20"
     >
-      <div className="panel flex items-center gap-2 px-3 py-2 min-w-[320px]">
+      <div className="panel flex items-center gap-2 px-3 py-2 w-[240px]">
         <svg
           width="14"
           height="14"

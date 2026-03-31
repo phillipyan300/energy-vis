@@ -22,11 +22,16 @@ export default function TimelineSlider({
   facilityCount,
 }: TimelineSliderProps) {
   const yearRange = maxYear - minYear;
+  // Show abbreviated ticks: '06, '10, '15, '20, '25, '30, '35
   const tickYears: number[] = [];
   for (let y = minYear; y <= maxYear; y++) {
-    if (y % 2 === 0 || y === minYear || y === maxYear) {
+    if (y % 5 === 0) {
       tickYears.push(y);
     }
+  }
+  // Always include the last year
+  if (tickYears[tickYears.length - 1] !== maxYear) {
+    tickYears.push(maxYear);
   }
 
   return (
@@ -77,19 +82,18 @@ export default function TimelineSlider({
           className="timeline-slider w-full"
           step={1}
         />
-        <div className="flex justify-between px-0.5">
+        <div className="relative h-3 mt-0.5">
           {tickYears.map((y) => (
             <span
               key={y}
-              className={`text-[10px] tabular-nums ${
-                y <= currentYear ? "text-gray-300" : "text-gray-600"
+              className={`absolute text-[10px] tabular-nums -translate-x-1/2 ${
+                y <= currentYear ? "text-gray-400" : "text-gray-600"
               }`}
               style={{
-                position: "relative",
-                left: `${((y - minYear) / yearRange) * 0 /* handled by flex */}%`,
+                left: `${((y - minYear) / yearRange) * 100}%`,
               }}
             >
-              {y}
+              &apos;{String(y).slice(2)}
             </span>
           ))}
         </div>
