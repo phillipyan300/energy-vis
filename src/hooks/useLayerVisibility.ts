@@ -37,5 +37,5 @@ export function useLayerVisibility() {
     setFuelFilters((prev) => ({ ...prev, [fuel]: !prev[fuel] }));
   }, []);
 
-  return { visibility, fuelFilters, toggleLayer, toggleFuelFilter };
+  return { visibility, setVisibility, fuelFilters, setFuelFilters, toggleLayer, toggleFuelFilter };
 }

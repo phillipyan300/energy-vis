@@ -28,6 +28,7 @@ import Legend from "./Legend";
 import Tooltip from "./Tooltip";
 import TimelineSlider from "./TimelineSlider";
 import SearchBar from "./SearchBar";
+import NarrativeTour from "./NarrativeTour";
 import type { SelectedFeature, TooltipInfo, SearchResult, ISORegionSummary } from "@/types";
 
 function DeckGLOverlay(props: { layers: LayersList }) {
@@ -49,11 +50,12 @@ export default function MapView() {
     queueProjects,
     loading,
   } = useMapData();
-  const { visibility, fuelFilters, toggleLayer, toggleFuelFilter } =
+  const { visibility, setVisibility, fuelFilters, setFuelFilters, toggleLayer, toggleFuelFilter } =
     useLayerVisibility();
   const [selected, setSelected] = useState<SelectedFeature>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
   const [zoom, setZoom] = useState(INITIAL_VIEW_STATE.zoom);
+  const [tourActive, setTourActive] = useState(true);
 
   // Timeline: compute year range from data + queue CODs
   const { minYear, maxYear } = useMemo(() => {
@@ -282,13 +284,13 @@ export default function MapView() {
   const layers = useMemo(() => {
     const l: (Layer | null)[] = [];
 
-    const isoLayer = createIsoBoundaryLayer(
+    const isoLayers = createIsoBoundaryLayer(
       isoBoundaries,
       visibility.isoBoundaries,
       handleHover,
       handleISOClick,
     );
-    if (isoLayer) l.push(isoLayer);
+    l.push(...isoLayers);
 
     const txLayer = createTransmissionLayer(
       transmissionLines,
@@ -392,21 +394,16 @@ export default function MapView() {
         <DeckGLOverlay layers={layers} />
       </Map>
 
-      <StatsBar datacenters={filteredDatacenters} />
-      <SearchBar items={searchItems} onSelect={handleSearchSelect} />
-
-      <LayerControls
-        visibility={visibility}
-        fuelFilters={fuelFilters}
-        toggleLayer={toggleLayer}
-        toggleFuelFilter={toggleFuelFilter}
-        datacenterCount={filteredDatacenters.length}
-        powerPlantCount={powerPlants.length}
-        hasTransmission={transmissionLines !== null}
-        hasGridConnections={gridConnections !== null}
-        queueCount={filteredQueueProjects.length}
+      <NarrativeTour
+        mapRef={mapRef}
+        setVisibility={setVisibility}
+        setFuelFilters={setFuelFilters}
+        setYear={timeline.setYear}
+        onActiveChange={setTourActive}
       />
 
+      {/* Always visible: tooltip + info panel (for hover/click during tour) */}
+      <Tooltip info={tooltip} />
       <InfoPanel
         selected={selected}
         onClose={() => setSelected(null)}
@@ -414,23 +411,42 @@ export default function MapView() {
         gridConnections={gridConnections}
       />
 
-      <Legend
-        showPlants={visibility.powerPlants}
-        showConnections={visibility.gridConnections}
-      />
+      {/* Hide controls during narrative tour */}
+      <div
+        className="transition-opacity duration-500"
+        style={{ opacity: tourActive ? 0 : 1, pointerEvents: tourActive ? "none" : "auto" }}
+      >
+        <StatsBar datacenters={filteredDatacenters} />
+        <SearchBar items={searchItems} onSelect={handleSearchSelect} />
 
-      <Tooltip info={tooltip} />
+        <LayerControls
+          visibility={visibility}
+          fuelFilters={fuelFilters}
+          toggleLayer={toggleLayer}
+          toggleFuelFilter={toggleFuelFilter}
+          datacenterCount={filteredDatacenters.length}
+          powerPlantCount={powerPlants.length}
+          hasTransmission={transmissionLines !== null}
+          hasGridConnections={gridConnections !== null}
+          queueCount={filteredQueueProjects.length}
+        />
 
-      <TimelineSlider
-        currentYear={timeline.currentYear}
-        isPlaying={timeline.isPlaying}
-        minYear={timeline.minYear}
-        maxYear={timeline.maxYear}
-        setYear={timeline.setYear}
-        togglePlay={timeline.togglePlay}
-        cumulativeMW={filteredDatacenters.reduce((s, d) => s + d.power_mw, 0)}
-        facilityCount={filteredDatacenters.length}
-      />
+        <Legend
+          showPlants={visibility.powerPlants}
+          showConnections={visibility.gridConnections}
+        />
+
+        <TimelineSlider
+          currentYear={timeline.currentYear}
+          isPlaying={timeline.isPlaying}
+          minYear={timeline.minYear}
+          maxYear={timeline.maxYear}
+          setYear={timeline.setYear}
+          togglePlay={timeline.togglePlay}
+          cumulativeMW={filteredDatacenters.reduce((s, d) => s + d.power_mw, 0)}
+          facilityCount={filteredDatacenters.length}
+        />
+      </div>
 
       <div className="absolute bottom-4 right-4 z-10 text-xs text-gray-600">
         AI Power Map

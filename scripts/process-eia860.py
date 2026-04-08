@@ -158,7 +158,13 @@ def process_plants(zip_path):
         except (ValueError, TypeError):
             continue
 
-        if not (24 < lat_f < 50 and -125 < lon_f < -66):
+        # Include CONUS, Alaska, Hawaii, Puerto Rico, US Virgin Islands, Guam
+        in_conus = 24 < lat_f < 50 and -125 < lon_f < -66
+        in_alaska = 51 < lat_f < 72 and -180 < lon_f < -129
+        in_hawaii = 18 < lat_f < 23 and -161 < lon_f < -154
+        in_pr_vi = 17 < lat_f < 19 and -68 < lon_f < -64
+        in_guam = 13 < lat_f < 14 and 144 < lon_f < 145
+        if not (in_conus or in_alaska or in_hawaii or in_pr_vi or in_guam):
             continue
 
         plant_name = str(row.get("Plant Name", row.get("plant_name", "Unknown")))
