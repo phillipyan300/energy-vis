@@ -22,6 +22,8 @@ export interface PowerPlant {
   capacity_mw: number;
   fuel_type: FuelType;
   state: string;
+  /** Capacity-weighted mean of generator online years (EIA Form 860). */
+  operating_year?: number;
 }
 
 export type FuelType =

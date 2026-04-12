@@ -43,14 +43,40 @@ export default function HomePage() {
               </span>
             </Link>
           </li>
+          <li>
+            <Link
+              href="/power-management"
+              className="group flex items-center justify-between rounded-xl border border-gray-800 bg-gray-900/50 px-5 py-4 transition hover:border-gray-700 hover:bg-gray-900"
+            >
+              <div>
+                <h2 className="font-medium text-gray-100">
+                  Fleet age &amp; power management
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  EIA-based capacity-weighted vintage — a public baseline for
+                  asset diligence and O&amp;M context.
+                </p>
+              </div>
+              <span
+                className="ml-4 shrink-0 text-gray-500 transition group-hover:text-amber-400"
+                aria-hidden
+              >
+                →
+              </span>
+            </Link>
+          </li>
         </ul>
       </main>
 
       <footer className="border-t border-gray-800/80 py-8">
         <div className="mx-auto max-w-3xl px-6 text-center text-xs text-gray-600">
-          Open the visualization above or bookmark{" "}
+          Deep links:{" "}
           <code className="rounded bg-gray-900 px-1.5 py-0.5 text-gray-400">
             /ai-power-map
+          </code>
+          ,{" "}
+          <code className="rounded bg-gray-900 px-1.5 py-0.5 text-gray-400">
+            /power-management
           </code>
           .
         </div>
