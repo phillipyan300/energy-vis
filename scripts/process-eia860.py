@@ -17,6 +17,8 @@ import tempfile
 EIA_URL = "https://www.eia.gov/electricity/data/eia860/xls/eia8602024.zip"
 
 # Fuel code mapping
+REFERENCE_YEAR = 2025  # EIA 860 release year + 1; used for implied fleet age
+
 FUEL_MAP = {
     "NG": "gas", "LFG": "gas", "OBG": "gas", "BFG": "gas",
     "NUC": "nuclear",
@@ -34,6 +36,26 @@ FUEL_MAP = {
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 OUTPUT_PATH = os.path.join(PROJECT_DIR, "public", "data", "power-plants.json")
+
+
+def parse_generator_operating_year(row):
+    """EIA generator rows include an operating year for online generators."""
+    for key in (
+        "Operating Year",
+        "operating_year",
+        "Operating year",
+        "First Operating Year",
+    ):
+        v = row.get(key)
+        if v is None or v == "":
+            continue
+        try:
+            y = int(float(str(v).strip()))
+            if 1900 <= y <= REFERENCE_YEAR + 5:
+                return y
+        except (ValueError, TypeError):
+            continue
+    return None
 
 
 def download_eia860():
@@ -179,6 +201,8 @@ def process_plants(zip_path):
             "state": str(row.get("State", row.get("state", ""))),
             "capacity_mw": 0,
             "fuel_type": "other",
+            "_oy_sum": 0.0,
+            "_oy_mw": 0.0,
         }
 
     print(f"Found {len(plants)} plants with valid coordinates")
@@ -210,18 +234,28 @@ def process_plants(zip_path):
                                           row.get("Nameplate Capacity\n(MW)", 0))))
             except (ValueError, TypeError):
                 cap = 0
+            if cap <= 0:
+                continue
 
+            op_y = parse_generator_operating_year(row)
             fuel = str(row.get("Energy Source 1", row.get("energy_source_1",
                               row.get("Technology", "OTH"))))
             fuel_type = FUEL_MAP.get(fuel, "other")
 
             plants[plant_code]["capacity_mw"] += cap
+            if op_y is not None:
+                plants[plant_code]["_oy_sum"] += cap * op_y
+                plants[plant_code]["_oy_mw"] += cap
             if fuel_type != "other" or plants[plant_code]["fuel_type"] == "other":
                 plants[plant_code]["fuel_type"] = fuel_type
 
     result = [p for p in plants.values() if p["capacity_mw"] >= 1]
     for p in result:
         p["capacity_mw"] = round(p["capacity_mw"], 1)
+        oy_mw = p.pop("_oy_mw", 0)
+        oy_sum = p.pop("_oy_sum", 0)
+        if oy_mw > 0:
+            p["operating_year"] = int(round(oy_sum / oy_mw))
 
     import shutil
     shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -230,10 +264,22 @@ def process_plants(zip_path):
 
 
 def main():
-    tmp_dir, zip_path = download_eia860()
+    import sys
+
+    download_tmp = None
+    if len(sys.argv) > 1:
+        zip_path = os.path.abspath(sys.argv[1])
+        if not os.path.isfile(zip_path):
+            raise FileNotFoundError(f"Zip not found: {zip_path}")
+        print(f"Using local zip: {zip_path}")
+    else:
+        download_tmp, zip_path = download_eia860()
     try:
         plants = process_plants(zip_path)
         print(f"\nProcessed {len(plants)} power plants")
+
+        with_oy = sum(1 for p in plants if p.get("operating_year") is not None)
+        print(f"Plants with operating_year: {with_oy} / {len(plants)}")
 
         os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
         with open(OUTPUT_PATH, "w") as f:
@@ -254,7 +300,8 @@ def main():
             print(f"  {ft}: {count}")
     finally:
         import shutil
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        if download_tmp:
+            shutil.rmtree(download_tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":
