@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Power Map — Where AI Meets the Grid",
+  title: {
+    default: "Energy Vis",
+    template: "%s · Energy Vis",
+  },
   description:
-    "Interactive visualization of AI datacenter buildout and US electrical grid infrastructure. Explore the collision between AI compute demand and grid capacity.",
+    "Interactive visualizations of US electrical infrastructure, the grid, and AI-related buildout.",
   openGraph: {
-    title: "AI Power Map — Where AI Meets the Grid",
+    title: "Energy Vis",
     description:
-      "Interactive visualization of AI datacenter buildout and US electrical grid infrastructure.",
+      "Interactive visualizations of US electrical infrastructure and the power grid.",
     type: "website",
   },
 };
