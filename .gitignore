@@ -28,3 +28,6 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# Full EIA-860 JSON extracts (~100MB+); regenerate with scripts/export-eia860-tables.py
+public/data/eia860/

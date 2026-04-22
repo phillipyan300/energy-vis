@@ -9,12 +9,22 @@ Handles both xlsx and csv formats found in the EIA zip file.
 import json
 import csv
 import os
-import urllib.request
+import sys
 import zipfile
 import tempfile
 
-# EIA Form 860 download URL
-EIA_URL = "https://www.eia.gov/electricity/data/eia860/xls/eia8602024.zip"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+from eia860_io import (  # noqa: E402
+    DEFAULT_EIA860_URL,
+    download_eia860_zip,
+    read_xlsx_sheet,
+)
+
+# Override with EIA860_URL when refreshing to a new annual file.
+EIA_URL = os.environ.get("EIA860_URL", DEFAULT_EIA860_URL)
 
 # Fuel code mapping
 REFERENCE_YEAR = 2025  # EIA 860 release year + 1; used for implied fleet age
@@ -33,7 +43,6 @@ FUEL_MAP = {
     "SLW": "other", "MWH": "other", "BAT": "other",
 }
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 OUTPUT_PATH = os.path.join(PROJECT_DIR, "public", "data", "power-plants.json")
 
@@ -56,53 +65,6 @@ def parse_generator_operating_year(row):
         except (ValueError, TypeError):
             continue
     return None
-
-
-def download_eia860():
-    """Download EIA 860 zip file to temp directory."""
-    print("Downloading EIA Form 860 data...")
-    tmp_dir = tempfile.mkdtemp()
-    zip_path = os.path.join(tmp_dir, "eia860.zip")
-
-    req = urllib.request.Request(EIA_URL, headers={
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
-    })
-    with urllib.request.urlopen(req) as response:
-        with open(zip_path, "wb") as f:
-            f.write(response.read())
-
-    file_size = os.path.getsize(zip_path)
-    print(f"Downloaded {file_size / 1024 / 1024:.1f} MB to {zip_path}")
-    return tmp_dir, zip_path
-
-
-def read_xlsx_sheet(filepath, skip_rows=1):
-    """Read xlsx file using openpyxl, return list of dicts."""
-    try:
-        import openpyxl
-    except ImportError:
-        print("Installing openpyxl...")
-        import subprocess
-        subprocess.check_call(["pip3", "install", "openpyxl", "-q"])
-        import openpyxl
-
-    wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    wb.close()
-
-    # Find header row (skip initial rows which may be titles)
-    header_row = skip_rows
-    headers = [str(h).strip() if h else f"col_{i}" for i, h in enumerate(rows[header_row])]
-
-    result = []
-    for row in rows[header_row + 1:]:
-        d = {}
-        for i, val in enumerate(row):
-            if i < len(headers):
-                d[headers[i]] = val
-        result.append(d)
-    return result
 
 
 def process_plants(zip_path):
@@ -158,7 +120,7 @@ def process_plants(zip_path):
 
     # Read plant data
     if plant_file.endswith(".xlsx"):
-        plant_rows = read_xlsx_sheet(plant_file, skip_rows=1)
+        plant_rows = read_xlsx_sheet(plant_file, sheet_name="Plant", skip_rows=1)
     else:
         with open(plant_file, "r", encoding="utf-8-sig") as f:
             plant_rows = list(csv.DictReader(f))
@@ -210,7 +172,10 @@ def process_plants(zip_path):
     # Read generator data
     if gen_file:
         if gen_file.endswith(".xlsx"):
-            gen_rows = read_xlsx_sheet(gen_file, skip_rows=1)
+            # Schedule 3.1 workbook: Operable / Proposed / Retired — map uses operable only.
+            gen_rows = read_xlsx_sheet(
+                gen_file, sheet_name="Operable", skip_rows=1
+            )
         else:
             with open(gen_file, "r", encoding="utf-8-sig") as f:
                 gen_rows = list(csv.DictReader(f))
@@ -273,7 +238,7 @@ def main():
             raise FileNotFoundError(f"Zip not found: {zip_path}")
         print(f"Using local zip: {zip_path}")
     else:
-        download_tmp, zip_path = download_eia860()
+        download_tmp, zip_path = download_eia860_zip(url=EIA_URL)
     try:
         plants = process_plants(zip_path)
         print(f"\nProcessed {len(plants)} power plants")

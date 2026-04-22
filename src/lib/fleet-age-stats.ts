@@ -1,4 +1,6 @@
+import type { FeatureCollection } from "geojson";
 import type { PowerPlant } from "@/types";
+import { assignRegions } from "@/lib/geo-utils";
 
 /** Match EIA 860 reference in scripts/process-eia860.py */
 export const FLEET_REFERENCE_YEAR = 2025;
@@ -118,4 +120,89 @@ export function computeFleetAgeSummary(
     buckets,
     byFuel,
   };
+}
+
+export interface RegionAgeRollup {
+  regionId: string;
+  capacityMw: number;
+  capacityGw: number;
+  weightedAvgAge: number;
+  plantCount: number;
+}
+
+/** MW-weighted average age per ISO/RTO polygon (from point-in-polygon). */
+export function computeIsoAgeRollup(
+  plants: PowerPlant[],
+  isoBoundaries: FeatureCollection | null,
+  refYear: number = FLEET_REFERENCE_YEAR,
+): RegionAgeRollup[] {
+  const regionOfPlant = assignRegions(plants, isoBoundaries);
+  const agg = new Map<string, { mw: number; ageSum: number; count: number }>();
+
+  for (const p of plants) {
+    if (p.operating_year == null || p.capacity_mw <= 0) continue;
+    const iso = regionOfPlant.get(p.id);
+    if (!iso) continue;
+    const age = refYear - p.operating_year;
+    const cur = agg.get(iso) ?? { mw: 0, ageSum: 0, count: 0 };
+    cur.mw += p.capacity_mw;
+    cur.ageSum += p.capacity_mw * age;
+    cur.count += 1;
+    agg.set(iso, cur);
+  }
+
+  const rows: RegionAgeRollup[] = [];
+  for (const [regionId, v] of agg) {
+    rows.push({
+      regionId,
+      capacityMw: v.mw,
+      capacityGw: v.mw / 1000,
+      weightedAvgAge: v.mw > 0 ? v.ageSum / v.mw : 0,
+      plantCount: v.count,
+    });
+  }
+  return rows.sort((a, b) => b.capacityMw - a.capacityMw);
+}
+
+/** MW-weighted average age per state (EIA state code on plant). */
+export function computeStateAgeRollup(
+  plants: PowerPlant[],
+  refYear: number = FLEET_REFERENCE_YEAR,
+): RegionAgeRollup[] {
+  const agg = new Map<string, { mw: number; ageSum: number; count: number }>();
+
+  for (const p of plants) {
+    if (p.operating_year == null || p.capacity_mw <= 0) continue;
+    const st = String(p.state || "").trim().toUpperCase();
+    if (!st) continue;
+    const age = refYear - p.operating_year;
+    const cur = agg.get(st) ?? { mw: 0, ageSum: 0, count: 0 };
+    cur.mw += p.capacity_mw;
+    cur.ageSum += p.capacity_mw * age;
+    cur.count += 1;
+    agg.set(st, cur);
+  }
+
+  const rows: RegionAgeRollup[] = [];
+  for (const [regionId, v] of agg) {
+    rows.push({
+      regionId,
+      capacityMw: v.mw,
+      capacityGw: v.mw / 1000,
+      weightedAvgAge: v.mw > 0 ? v.ageSum / v.mw : 0,
+      plantCount: v.count,
+    });
+  }
+  return rows.sort((a, b) => b.capacityMw - a.capacityMw);
+}
+
+/** Map ISO name → MW-weighted average age (for choropleth). */
+export function isoRollupToAgeMap(
+  rollups: RegionAgeRollup[],
+): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const r of rollups) {
+    m.set(r.regionId, r.weightedAvgAge);
+  }
+  return m;
 }
