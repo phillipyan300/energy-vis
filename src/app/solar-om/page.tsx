@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import type { PowerPlant, FuelType, QueueProject } from "@/types";
-import { computeOperatorProfiles } from "@/lib/operator-stats";
+import { computeOperatorProfiles, type OperatorProfile } from "@/lib/operator-stats";
 import { FUEL_HEX } from "@/lib/colors";
 import { assignRegions } from "@/lib/geo-utils";
 import SolarOMTourPanel, {
@@ -45,9 +45,8 @@ export default function SolarOMPage() {
   const [err, setErr] = useState<string | null>(null);
   const [slideIndex, setSlideIndex] = useState(0);
   const [manualFuel, setManualFuel] = useState<string | null>(null);
-  // Fuel sidebar + manualFuel override are reserved for a future "free look"
-  // mode the user enters after completing the walkthrough. Hidden for now.
-  const freeLook = false;
+  // Operator picked by the user in free-view mode (beat 5).
+  const [selectedOperator, setSelectedOperator] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -96,13 +95,35 @@ export default function SolarOMPage() {
 
   const slide = SOLAR_OM_SLIDES[slideIndex];
   const currentBeatIndex = slide.beatIndex;
+  const freeLook = currentBeatIndex === 5;
+
+  // Free-view: look up the selected operator's full profile for use in
+  // spotlight resolution and info-card content.
+  const selectedProfile = useMemo<OperatorProfile | null>(() => {
+    if (!selectedOperator) return null;
+    return profiles.find((p) => p.operator === selectedOperator) ?? null;
+  }, [selectedOperator, profiles]);
 
   // Resolve spotlight/usMap operator role → operator profile & name
   const spotlightProfile = useMemo(
-    () => resolveSpotlightProfile(slide.overlay?.companyRole, topOldGuard, topSolar),
-    [slide.overlay?.companyRole, topOldGuard, topSolar],
+    () => resolveSpotlightProfile(slide.overlay?.companyRole, topOldGuard, topSolar, selectedProfile),
+    [slide.overlay?.companyRole, topOldGuard, topSolar, selectedProfile],
   );
-  const spotlightOperator = spotlightProfile?.operator ?? null;
+  // In free-view slide 1 there's no overlay, but we still want to display
+  // the user's last selection in the info card. Fall back to selectedProfile.
+  const effectiveSpotlightProfile = spotlightProfile ?? (freeLook ? selectedProfile : null);
+  const spotlightOperator = effectiveSpotlightProfile?.operator ?? null;
+
+  // Click handler: in free-view slide 1, select an operator and advance to
+  // the map slide. Outside free view, clicks are ignored.
+  const handleSelectOperator = useMemo(
+    () => (op: string) => {
+      if (!freeLook) return;
+      setSelectedOperator(op);
+      if (slide.id === "b5-s1-pick") setSlideIndex((i) => i + 1);
+    },
+    [freeLook, slide.id],
+  );
 
   // ISOs the spotlight operator has plants in (point-in-polygon against
   // iso-boundaries). Only computed when we actually need it.
@@ -175,6 +196,7 @@ export default function SolarOMPage() {
           spotlightOperator={spotlightOperator}
           mapBoundaries={usStates}
           queueProjects={queueProjects}
+          onSelectOperator={handleSelectOperator}
         />
       )}
 
@@ -240,7 +262,7 @@ export default function SolarOMPage() {
           onSlide={setSlideIndex}
           profiles={profiles}
           manualFuel={manualFuel}
-          spotlightProfile={spotlightProfile}
+          spotlightProfile={effectiveSpotlightProfile}
           spotlightIsoCount={spotlightIsoCount}
           spotlightOutlierCount={spotlightOutlierCount}
         />

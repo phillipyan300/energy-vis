@@ -23,7 +23,7 @@ export interface SlideViewState {
   duration: number;
 }
 
-export type CompanyRole = "top-old-guard" | "top-solar";
+export type CompanyRole = "top-old-guard" | "top-solar" | "selected";
 
 export interface SlideOverlay {
   /** Draw a horizontal ring on the Y-axis at each listed fuel's avg age */
@@ -68,6 +68,7 @@ export const SOLAR_OM_BEATS: Beat[] = [
   { index: 2, title: "Solar · young, many, scattered" },
   { index: 3, title: "Why a young industry looks like this" },
   { index: 4, title: "Why O&M efficiency matters" },
+  { index: 5, title: "Free view · explore any operator" },
 ];
 
 export const SOLAR_OM_SLIDES: Slide[] = [
@@ -76,9 +77,19 @@ export const SOLAR_OM_SLIDES: Slide[] = [
     id: "hook",
     beatIndex: 0,
     title: "Every US generation operator",
-    kicker: "One sphere each",
+    kicker: "Slide 1 · one sphere each",
     viewState: { target: [25, 25, 25], zoom: 0.98, rotationOrbit: -28, rotationX: 22, duration: 1600 },
     focusFuels: null,
+    cornerHint: "tr",
+  },
+  {
+    id: "b0-s2-ages",
+    beatIndex: 0,
+    title: "Fleets by age",
+    kicker: "Slide 2 · average fleet age, by fuel",
+    viewState: { target: [8, 50, 8], zoom: 1.6, rotationOrbit: 25, rotationX: 15, duration: 1500 },
+    focusFuels: null,
+    overlay: { ageRingFuels: ["coal", "gas", "oil", "solar", "wind", "nuclear", "hydro"] },
     cornerHint: "tr",
   },
 
@@ -211,6 +222,7 @@ export const SOLAR_OM_SLIDES: Slide[] = [
     kicker: "Slide 3 · no service territory to defer to",
     viewState: { target: [30, 20, 40], zoom: 1.2, rotationOrbit: -10, rotationX: 25, duration: 1500 },
     focusFuels: ["solar"],
+    overlay: { showQueue: true },
     cornerHint: "tr",
   },
   {
@@ -218,8 +230,9 @@ export const SOLAR_OM_SLIDES: Slide[] = [
     beatIndex: 3,
     title: "Structural, not stylistic",
     kicker: "Slide 4 · why this shape is here to stay",
-    viewState: { target: [25, 22, 25], zoom: 0.8, rotationOrbit: -18, rotationX: 24, duration: 1600 },
+    viewState: { target: [25, 22, 25], zoom: 1.6, rotationOrbit: -18, rotationX: 24, duration: 1600 },
     focusFuels: ["solar"],
+    overlay: { showQueue: true },
     cornerHint: "tr",
   },
 
@@ -229,8 +242,33 @@ export const SOLAR_OM_SLIDES: Slide[] = [
     beatIndex: 4,
     title: "Why O&M efficiency is the prize",
     kicker: "The structural opportunity",
-    viewState: { target: [25, 22, 25], zoom: 0.7, rotationOrbit: -18, rotationX: 24, duration: 1800 },
+    // Camera faces solar's age ring (near the y-axis floor). Keeps the queue
+    // dots rendered off to the left as the backdrop of the "growing" story.
+    viewState: { target: [8, 20, 8], zoom: 1.9, rotationOrbit: 22, rotationX: 14, duration: 1700 },
     focusFuels: ["solar"],
+    overlay: { showQueue: true, ageRingFuels: ["solar"] },
+    cornerHint: "tr",
+  },
+
+  // ── Beat 5 · Free view (2 slides, interactive) ─────────────────────────
+  {
+    id: "b5-s1-pick",
+    beatIndex: 5,
+    title: "Pick any operator",
+    kicker: "Slide 1 · click a sphere to see its footprint",
+    viewState: { target: [25, 25, 25], zoom: 0.9, rotationOrbit: -22, rotationX: 20, duration: 1500 },
+    focusFuels: null,
+    cornerHint: "tr",
+  },
+  {
+    id: "b5-s2-map",
+    beatIndex: 5,
+    title: "Operator on the map",
+    kicker: "Slide 2 · centroid and every site",
+    viewState: { target: [-85, 0, 50], zoom: 2.0, rotationOrbit: 0, rotationX: 89, duration: 1700 },
+    focusFuels: null,
+    overlay: { companyRole: "selected", usMap: true, usMapCentroidFilter: "contiguous" },
+    sceneMode: "usmap",
     cornerHint: "tr",
   },
 ];
@@ -303,9 +341,11 @@ export function resolveSpotlightProfile(
   role: CompanyRole | undefined,
   topOldGuard: OperatorProfile | null,
   topSolar: OperatorProfile | null,
+  selected: OperatorProfile | null = null,
 ): OperatorProfile | null {
   if (role === "top-old-guard") return topOldGuard;
   if (role === "top-solar") return topSolar;
+  if (role === "selected") return selected;
   return null;
 }
 
@@ -443,9 +483,25 @@ export default function SolarOMTourPanel({
     const coal = profiles.filter((p) => p.primaryFuel === "coal");
     const avg = (arr: OperatorProfile[], fn: (p: OperatorProfile) => number) =>
       arr.length ? arr.reduce((s, p) => s + fn(p), 0) / arr.length : 0;
+
+    // Per-fuel average fleet age, sorted oldest first. Uses the same
+    // mean-of-operator-avgFleetAge formula as the scatter's ring positions
+    // so the displayed numbers match where the rings render.
+    const byFuel: Record<string, { sum: number; n: number }> = {};
+    for (const p of profiles) {
+      if (!byFuel[p.primaryFuel]) byFuel[p.primaryFuel] = { sum: 0, n: 0 };
+      byFuel[p.primaryFuel].sum += p.avgFleetAge;
+      byFuel[p.primaryFuel].n += 1;
+    }
+    const ageByFuel = Object.entries(byFuel)
+      .map(([fuel, v]) => ({ fuel, avgAge: v.sum / v.n, operatorCount: v.n }))
+      .filter((x) => Number.isFinite(x.avgAge) && x.avgAge > 0)
+      .sort((a, b) => b.avgAge - a.avgAge);
+
     return {
       totalOperators: profiles.length,
       solarCount: solar.length,
+      ageByFuel,
       solar: {
         avgSites: avg(solar, (p) => p.siteCount),
         avgAge: avg(solar, (p) => p.avgFleetAge),
@@ -653,6 +709,7 @@ interface SlideContentProps {
 type StatsShape = {
   totalOperators: number;
   solarCount: number;
+  ageByFuel: { fuel: string; avgAge: number; operatorCount: number }[];
   solar: { avgSites: number; avgAge: number; avgDisp: number; avgGw: number; topBySites: OperatorProfile[] };
   gas: { avgSites: number; avgAge: number; avgDisp: number };
   coal: { avgSites: number; avgAge: number; avgDisp: number };
@@ -689,6 +746,32 @@ function SlideContent({
               sub={`avg ${stats.solar.avgGw.toFixed(1)} GW each`}
             />
           </div>
+        </>
+      );
+
+    case "b0-s2-ages":
+      return (
+        <>
+          <p>
+            Each fuel has an average fleet age. The rings on the Y-axis mark where each one sits.
+          </p>
+          <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-1 text-xs">
+            <p className="py-1 text-[10px] font-medium uppercase tracking-wide text-gray-500">
+              Capacity-weighted avg age
+            </p>
+            {stats.ageByFuel.map((row) => (
+              <FuelStat
+                key={row.fuel}
+                fuel={row.fuel}
+                label={row.fuel.charAt(0).toUpperCase() + row.fuel.slice(1)}
+                value={`${row.avgAge.toFixed(1)} yr`}
+              />
+            ))}
+          </div>
+          <p className="text-xs text-gray-500">
+            Coal sits half a century up. Solar is barely off the floor. That gap is the starting
+            point for everything else.
+          </p>
         </>
       );
 
@@ -1015,6 +1098,12 @@ function SlideContent({
             <strong className="text-gray-200">{stats.solar.avgSites.toFixed(0)}+ sites</strong> across thousands of miles cannot.
           </p>
           <p>
+            The ring on the Y-axis is solar&apos;s capacity-weighted average age:
+            about <strong className="text-gray-200">{stats.solar.avgAge.toFixed(1)} years</strong>. Most
+            of this fleet has not finished its first warranty cycle. There is no 40-year O&amp;M playbook
+            to copy, because no one has run solar for 40 years.
+          </p>
+          <p>
             And the problem is <em>growing</em>. <strong className="text-gray-200">118 GW</strong> of solar
             is planned across 957 projects (EIA 860M), nearly doubling the operating fleet. Every percent
             of O&amp;M cost saved compounds across a fleet that size.
@@ -1037,6 +1126,57 @@ function SlideContent({
               </Link>
             </li>
           </ul>
+        </>
+      );
+
+    case "b5-s1-pick":
+      return (
+        <>
+          <p>
+            You&apos;ve seen how the structure shapes solar. Now look at whoever you want.
+          </p>
+          <p>
+            <strong className="text-gray-200">Click any sphere</strong> in the 3D scatter to spotlight
+            that operator and render their full site footprint on the map. The fuel filter on the left
+            narrows what&apos;s visible.
+          </p>
+          {spotlightProfile && (
+            <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-2 text-xs">
+              <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-500">Last selection</p>
+              <p className="text-gray-200">{spotlightProfile.operator}</p>
+              <p className="text-gray-500">
+                {spotlightProfile.siteCount} sites · {spotlightProfile.totalCapacityGw.toFixed(1)} GW ·
+                {" "}{spotlightProfile.primaryFuel}
+              </p>
+            </div>
+          )}
+        </>
+      );
+
+    case "b5-s2-map":
+      if (!spotlightProfile) {
+        return (
+          <p className="text-gray-500">
+            Go back to slide 1 and click a sphere to pick an operator.
+          </p>
+        );
+      }
+      return (
+        <>
+          <p>
+            <strong className="text-gray-200">{spotlightProfile.operator}</strong>
+            {spotlightProfile.primaryFuel ? ` (primarily ${spotlightProfile.primaryFuel})` : ""}.
+            Every site, with spokes to the centroid.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <StatCard label="Sites" value={spotlightProfile.siteCount.toLocaleString()} />
+            <StatCard label="Total GW" value={spotlightProfile.totalCapacityGw.toFixed(1)} sub="nameplate" />
+            <StatCard label="Fleet age" value={`${spotlightProfile.avgFleetAge.toFixed(1)} yr`} />
+            <StatCard label="Spread" value={`${Math.round(kmToMi(spotlightProfile.dispersionKm))} mi`} sub="centroid dist" />
+          </div>
+          <p className="text-xs text-gray-500">
+            Use Back to pick another, or the fuel filter to narrow the scatter.
+          </p>
         </>
       );
 
