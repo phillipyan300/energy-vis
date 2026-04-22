@@ -131,7 +131,7 @@ export default function FleetAgeMap({
       const oy = obj.operating_year as number | undefined;
       const name = (obj.name as string) || "Plant";
       if (cap != null) {
-        const plant = obj as PowerPlant;
+        const plant = obj as unknown as PowerPlant;
         const agePart =
           oy != null ? `${refYear - oy} yr` : "age n/a";
         setTooltip({
