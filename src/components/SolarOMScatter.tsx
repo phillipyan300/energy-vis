@@ -184,6 +184,8 @@ export interface SolarOMScatterProps {
   mapBoundaries?: FeatureCollection | null;
   /** Interconnection-queue projects (for slide.overlay.showQueue) */
   queueProjects?: QueueProject[] | null;
+  /** Called when a sphere is clicked in free-view mode. */
+  onSelectOperator?: (operator: string) => void;
 }
 
 export default function SolarOMScatter({
@@ -195,6 +197,7 @@ export default function SolarOMScatter({
   spotlightOperator = null,
   mapBoundaries = null,
   queueProjects = null,
+  onSelectOperator,
 }: SolarOMScatterProps) {
   // Uncontrolled view state: deck.gl manages interpolation + user interaction internally.
   // Changing `initialViewState` triggers a transition from the CURRENT camera to the new target,
@@ -305,6 +308,13 @@ export default function SolarOMScatter({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slideIndex, spotlightOperator, normalized, operatorCentroid]);
+
+  // Clear any stale hover tooltip whenever the slide changes. The camera
+  // moves out from under the cursor, so deck.gl never fires a "mouse left"
+  // event, leaving the old tooltip pinned to its previous position.
+  useEffect(() => {
+    setTooltip(null);
+  }, [slideIndex]);
 
   // Pre-compute per-fuel avg-age Y coords for the age-ring overlay
   const avgAgeByFuel = useMemo(() => {
@@ -493,6 +503,12 @@ export default function SolarOMScatter({
         },
         pickable: !isUsMap,
         onHover: handleHover,
+        onClick: (info) => {
+          if (!onSelectOperator) return;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const d = info.object as any;
+          if (d?.operator) onSelectOperator(d.operator);
+        },
         transitions: {
           getColor: { duration: 650 * ANIM_SPEED },
           getScale: { duration: 650 * ANIM_SPEED },
@@ -586,7 +602,7 @@ export default function SolarOMScatter({
           id: "usmap-others",
           data: othersData,
           getPosition: (d) => d.pos,
-          getRadius: 0.25,
+          getRadius: 0.5,
           radiusUnits: "pixels",
           getFillColor: [150, 160, 180, 80],
           stroked: false,
@@ -627,7 +643,7 @@ export default function SolarOMScatter({
           id: "usmap-focus",
           data: focusedData,
           getPosition: (d) => d.pos,
-          getRadius: 1.5,
+          getRadius: 3,
           radiusUnits: "pixels",
           getFillColor: (d) => {
             const base = FUEL_COLORS[d.fuel_type as keyof typeof FUEL_COLORS] ?? [
@@ -637,7 +653,7 @@ export default function SolarOMScatter({
           },
           getLineColor: [255, 255, 255, 220],
           lineWidthUnits: "pixels",
-          getLineWidth: 0.3,
+          getLineWidth: 0.6,
           stroked: true,
           pickable: true,
           onHover: handleHover,
@@ -681,6 +697,7 @@ export default function SolarOMScatter({
     operatorCentroid,
     queueProjects,
     slide.overlay?.showQueue,
+    onSelectOperator,
   ]);
 
   return (
