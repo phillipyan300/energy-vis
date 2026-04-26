@@ -89,22 +89,34 @@ function buildGrid(): { source: [number, number, number]; target: [number, numbe
 }
 const GRID_LINES = buildGrid();
 
-// Ring geometry on the Y-axis at a given height, small radius so it hugs the axis
+// Ring encircling one axis at a given offset along that axis.
+//  "y" horizontal ring at height y (age metric, existing behavior)
+//  "x" vertical ring in Y-Z plane at x offset (sites metric)
+//  "z" vertical ring in X-Y plane at z offset (dispersion metric)
 function buildRing(
-  height: number,
+  offset: number,
   radius: number,
   color: [number, number, number, number],
+  axis: "x" | "y" | "z" = "y",
   segments = 48,
 ): { source: [number, number, number]; target: [number, number, number]; color: [number, number, number, number] }[] {
   const out = [];
   for (let i = 0; i < segments; i++) {
     const a0 = (i / segments) * 2 * Math.PI;
     const a1 = ((i + 1) / segments) * 2 * Math.PI;
-    out.push({
-      source: [radius * Math.cos(a0), height, radius * Math.sin(a0)] as [number, number, number],
-      target: [radius * Math.cos(a1), height, radius * Math.sin(a1)] as [number, number, number],
-      color,
-    });
+    let source: [number, number, number];
+    let target: [number, number, number];
+    if (axis === "y") {
+      source = [radius * Math.cos(a0), offset, radius * Math.sin(a0)];
+      target = [radius * Math.cos(a1), offset, radius * Math.sin(a1)];
+    } else if (axis === "x") {
+      source = [offset, radius * Math.cos(a0), radius * Math.sin(a0)];
+      target = [offset, radius * Math.cos(a1), radius * Math.sin(a1)];
+    } else {
+      source = [radius * Math.cos(a0), radius * Math.sin(a0), offset];
+      target = [radius * Math.cos(a1), radius * Math.sin(a1), offset];
+    }
+    out.push({ source, target, color });
   }
   return out;
 }
@@ -316,20 +328,38 @@ export default function SolarOMScatter({
     setTooltip(null);
   }, [slideIndex]);
 
-  // Pre-compute per-fuel avg-age Y coords for the age-ring overlay
-  const avgAgeByFuel = useMemo(() => {
-    if (!profiles.length) return {} as Record<string, number>;
+  // Pre-compute per-fuel mean on each of the three cube axes, normalized to
+  // [0, 100] to match the sphere coordinate space. Used to place metric rings.
+  //  age        -> y offset  (horizontal ring)
+  //  sites      -> x offset  (ring encircling X axis)
+  //  dispersion -> z offset  (ring encircling Z axis)
+  const avgAxisByFuel = useMemo(() => {
+    const empty = {
+      age: {} as Record<string, number>,
+      sites: {} as Record<string, number>,
+      dispersion: {} as Record<string, number>,
+    };
+    if (!profiles.length) return empty;
     const maxAge = Math.max(...profiles.map((p) => p.avgFleetAge));
-    const byFuel: Record<string, { sum: number; n: number }> = {};
+    const maxSites = Math.max(...profiles.map((p) => p.siteCount));
+    const maxDisp = Math.max(...profiles.map((p) => p.dispersionKm));
+
+    const accum: Record<string, { ageSum: number; siteSum: number; dispSum: number; n: number }> = {};
     for (const p of profiles) {
-      if (!byFuel[p.primaryFuel]) byFuel[p.primaryFuel] = { sum: 0, n: 0 };
-      byFuel[p.primaryFuel].sum += p.avgFleetAge;
-      byFuel[p.primaryFuel].n += 1;
+      if (!accum[p.primaryFuel]) {
+        accum[p.primaryFuel] = { ageSum: 0, siteSum: 0, dispSum: 0, n: 0 };
+      }
+      const a = accum[p.primaryFuel];
+      a.ageSum += p.avgFleetAge;
+      a.siteSum += p.siteCount;
+      a.dispSum += p.dispersionKm;
+      a.n += 1;
     }
-    const out: Record<string, number> = {};
-    for (const [fuel, v] of Object.entries(byFuel)) {
-      const mean = v.sum / v.n;
-      out[fuel] = maxAge > 0 ? (mean / maxAge) * 100 : 0;
+    const out = { age: {} as Record<string, number>, sites: {} as Record<string, number>, dispersion: {} as Record<string, number> };
+    for (const [fuel, v] of Object.entries(accum)) {
+      out.age[fuel] = maxAge > 0 ? (v.ageSum / v.n / maxAge) * 100 : 0;
+      out.sites[fuel] = maxSites > 0 ? (v.siteSum / v.n / maxSites) * 100 : 0;
+      out.dispersion[fuel] = maxDisp > 0 ? (v.dispSum / v.n / maxDisp) * 100 : 0;
     }
     return out;
   }, [profiles]);
@@ -394,19 +424,29 @@ export default function SolarOMScatter({
     return projectedBoundaryFills.map((f) => ({ path: f.contour }));
   }, [projectedBoundaryFills]);
 
-  // ── Age-ring layer data (beat 1 slide 2) ────────────────────────────────
-  const ageRingData = useMemo(() => {
-    if (!slide.overlay?.ageRingFuels?.length) return [];
+  // Metric rings on the Y / X / Z axes (age / sites / dispersion).
+  const ringData = useMemo(() => {
     const out: { source: [number, number, number]; target: [number, number, number]; color: [number, number, number, number] }[] = [];
-    for (const fuel of slide.overlay.ageRingFuels) {
-      const h = avgAgeByFuel[fuel];
-      if (h == null) continue;
-      const base = FUEL_COLORS[fuel as keyof typeof FUEL_COLORS] ?? [180, 180, 180, 255];
-      const color: [number, number, number, number] = [base[0], base[1], base[2], 235];
-      out.push(...buildRing(h, 7, color));
-    }
+    const pushRings = (fuels: readonly string[] | undefined, axis: "x" | "y" | "z", metric: "age" | "sites" | "dispersion") => {
+      if (!fuels?.length) return;
+      for (const fuel of fuels) {
+        const offset = avgAxisByFuel[metric][fuel];
+        if (offset == null) continue;
+        const base = FUEL_COLORS[fuel as keyof typeof FUEL_COLORS] ?? [180, 180, 180, 255];
+        const color: [number, number, number, number] = [base[0], base[1], base[2], 235];
+        out.push(...buildRing(offset, 7, color, axis));
+      }
+    };
+    pushRings(slide.overlay?.ageRingFuels, "y", "age");
+    pushRings(slide.overlay?.siteRingFuels, "x", "sites");
+    pushRings(slide.overlay?.dispersionRingFuels, "z", "dispersion");
     return out;
-  }, [slide.overlay?.ageRingFuels, avgAgeByFuel]);
+  }, [
+    slide.overlay?.ageRingFuels,
+    slide.overlay?.siteRingFuels,
+    slide.overlay?.dispersionRingFuels,
+    avgAxisByFuel,
+  ]);
 
   // ── Layers ──────────────────────────────────────────────────────────────
   // Both regions (scatter cube + US map) live in the same world. The camera
@@ -453,11 +493,11 @@ export default function SolarOMScatter({
       }),
     );
 
-    if (ageRingData.length) {
+    if (ringData.length) {
       all.push(
         new LineLayer({
-          id: "age-rings",
-          data: ageRingData,
+          id: "metric-rings",
+          data: ringData,
           getSourcePosition: (d) => d.source,
           getTargetPosition: (d) => d.target,
           getColor: (d) => d.color,
@@ -689,7 +729,7 @@ export default function SolarOMScatter({
     normalized,
     activeFuels,
     handleHover,
-    ageRingData,
+    ringData,
     plants,
     spotlightOperator,
     projectedBoundaryFills,

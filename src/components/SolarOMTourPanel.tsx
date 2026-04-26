@@ -25,9 +25,15 @@ export interface SlideViewState {
 
 export type CompanyRole = "top-old-guard" | "top-solar" | "selected";
 
+type RingFuel = "coal" | "gas" | "oil" | "solar" | "wind" | "nuclear" | "hydro";
+
 export interface SlideOverlay {
   /** Draw a horizontal ring on the Y-axis at each listed fuel's avg age */
-  ageRingFuels?: ("coal" | "gas" | "oil" | "solar" | "wind" | "nuclear" | "hydro")[];
+  ageRingFuels?: RingFuel[];
+  /** Draw a ring encircling the X-axis at each listed fuel's avg site count */
+  siteRingFuels?: RingFuel[];
+  /** Draw a ring encircling the Z-axis at each listed fuel's avg dispersion */
+  dispersionRingFuels?: RingFuel[];
   /** Role marker resolved at runtime to an operator name (spotlight / usmap) */
   companyRole?: CompanyRole;
   /** Operator to spotlight in 3D scatter (resolved via companyRole) */
@@ -90,6 +96,30 @@ export const SOLAR_OM_SLIDES: Slide[] = [
     viewState: { target: [8, 50, 8], zoom: 1.6, rotationOrbit: 25, rotationX: 15, duration: 1500 },
     focusFuels: null,
     overlay: { ageRingFuels: ["coal", "gas", "oil", "solar", "wind", "nuclear", "hydro"] },
+    cornerHint: "tr",
+  },
+  {
+    id: "b0-s3-sites",
+    beatIndex: 0,
+    title: "Fleets by site count",
+    kicker: "Slide 3 · average sites per operator, by fuel",
+    // Rings encircle the X-axis at each fuel's avg site count. Camera swings
+    // around to face the X-axis from the Y-Z side so rings read as ellipses.
+    viewState: { target: [50, 8, 8], zoom: 1.4, rotationOrbit: -65, rotationX: 18, duration: 1500 },
+    focusFuels: null,
+    overlay: { siteRingFuels: ["coal", "gas", "oil", "solar", "wind", "nuclear", "hydro"] },
+    cornerHint: "tr",
+  },
+  {
+    id: "b0-s4-dispersion",
+    beatIndex: 0,
+    title: "Fleets by dispersion",
+    kicker: "Slide 4 · average geographic spread, by fuel",
+    // Rings encircle the Z-axis at each fuel's avg dispersion. Camera tilts
+    // into the X-Y plane so rings stacked along Z read as separable ellipses.
+    viewState: { target: [8, 8, 50], zoom: 1.4, rotationOrbit: 35, rotationX: 18, duration: 1500 },
+    focusFuels: null,
+    overlay: { dispersionRingFuels: ["coal", "gas", "oil", "solar", "wind", "nuclear", "hydro"] },
     cornerHint: "tr",
   },
 
@@ -484,24 +514,42 @@ export default function SolarOMTourPanel({
     const avg = (arr: OperatorProfile[], fn: (p: OperatorProfile) => number) =>
       arr.length ? arr.reduce((s, p) => s + fn(p), 0) / arr.length : 0;
 
-    // Per-fuel average fleet age, sorted oldest first. Uses the same
-    // mean-of-operator-avgFleetAge formula as the scatter's ring positions
-    // so the displayed numbers match where the rings render.
-    const byFuel: Record<string, { sum: number; n: number }> = {};
+    // Per-fuel metrics (age, sites, dispersion). Each list sorted largest-first
+    // so Beat 0 slides can walk the audience from the extreme down. Formulas
+    // match the scatter's ring positions so numbers align with where rings draw.
+    const metricAccum: Record<
+      string,
+      { ageSum: number; siteSum: number; dispSum: number; n: number }
+    > = {};
     for (const p of profiles) {
-      if (!byFuel[p.primaryFuel]) byFuel[p.primaryFuel] = { sum: 0, n: 0 };
-      byFuel[p.primaryFuel].sum += p.avgFleetAge;
-      byFuel[p.primaryFuel].n += 1;
+      if (!metricAccum[p.primaryFuel]) {
+        metricAccum[p.primaryFuel] = { ageSum: 0, siteSum: 0, dispSum: 0, n: 0 };
+      }
+      const a = metricAccum[p.primaryFuel];
+      a.ageSum += p.avgFleetAge;
+      a.siteSum += p.siteCount;
+      a.dispSum += p.dispersionKm;
+      a.n += 1;
     }
-    const ageByFuel = Object.entries(byFuel)
-      .map(([fuel, v]) => ({ fuel, avgAge: v.sum / v.n, operatorCount: v.n }))
+    const ageByFuel = Object.entries(metricAccum)
+      .map(([fuel, v]) => ({ fuel, avgAge: v.ageSum / v.n, operatorCount: v.n }))
       .filter((x) => Number.isFinite(x.avgAge) && x.avgAge > 0)
       .sort((a, b) => b.avgAge - a.avgAge);
+    const sitesByFuel = Object.entries(metricAccum)
+      .map(([fuel, v]) => ({ fuel, avgSites: v.siteSum / v.n, operatorCount: v.n }))
+      .filter((x) => Number.isFinite(x.avgSites) && x.avgSites > 0)
+      .sort((a, b) => b.avgSites - a.avgSites);
+    const dispByFuel = Object.entries(metricAccum)
+      .map(([fuel, v]) => ({ fuel, avgDispKm: v.dispSum / v.n, operatorCount: v.n }))
+      .filter((x) => Number.isFinite(x.avgDispKm) && x.avgDispKm > 0)
+      .sort((a, b) => b.avgDispKm - a.avgDispKm);
 
     return {
       totalOperators: profiles.length,
       solarCount: solar.length,
       ageByFuel,
+      sitesByFuel,
+      dispByFuel,
       solar: {
         avgSites: avg(solar, (p) => p.siteCount),
         avgAge: avg(solar, (p) => p.avgFleetAge),
@@ -710,6 +758,8 @@ type StatsShape = {
   totalOperators: number;
   solarCount: number;
   ageByFuel: { fuel: string; avgAge: number; operatorCount: number }[];
+  sitesByFuel: { fuel: string; avgSites: number; operatorCount: number }[];
+  dispByFuel: { fuel: string; avgDispKm: number; operatorCount: number }[];
   solar: { avgSites: number; avgAge: number; avgDisp: number; avgGw: number; topBySites: OperatorProfile[] };
   gas: { avgSites: number; avgAge: number; avgDisp: number };
   coal: { avgSites: number; avgAge: number; avgDisp: number };
@@ -771,6 +821,60 @@ function SlideContent({
           <p className="text-xs text-gray-500">
             Coal sits half a century up. Solar is barely off the floor. That gap is the starting
             point for everything else.
+          </p>
+        </>
+      );
+
+    case "b0-s3-sites":
+      return (
+        <>
+          <p>
+            Same idea, different axis. Rings encircle the X-axis at each fuel&apos;s average site
+            count per operator.
+          </p>
+          <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-1 text-xs">
+            <p className="py-1 text-[10px] font-medium uppercase tracking-wide text-gray-500">
+              Avg sites per operator
+            </p>
+            {stats.sitesByFuel.map((row) => (
+              <FuelStat
+                key={row.fuel}
+                fuel={row.fuel}
+                label={row.fuel.charAt(0).toUpperCase() + row.fuel.slice(1)}
+                value={row.avgSites.toFixed(1)}
+              />
+            ))}
+          </div>
+          <p className="text-xs text-gray-500">
+            Solar sits far out. Every fossil fuel is closer to the Y-axis because each operator
+            typically runs only a handful of plants.
+          </p>
+        </>
+      );
+
+    case "b0-s4-dispersion":
+      return (
+        <>
+          <p>
+            And the third axis: geographic spread, measured as average distance from each
+            operator&apos;s centroid to their plants.
+          </p>
+          <div className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-1 text-xs">
+            <p className="py-1 text-[10px] font-medium uppercase tracking-wide text-gray-500">
+              Avg dispersion per operator
+            </p>
+            {stats.dispByFuel.map((row) => (
+              <FuelStat
+                key={row.fuel}
+                fuel={row.fuel}
+                label={row.fuel.charAt(0).toUpperCase() + row.fuel.slice(1)}
+                value={`${Math.round(kmToMi(row.avgDispKm))} mi`}
+              />
+            ))}
+          </div>
+          <p className="text-xs text-gray-500">
+            Three axes, three different stories. Where each fuel lands in the combined 3D space
+            is what the rest of the tour is about.
           </p>
         </>
       );
